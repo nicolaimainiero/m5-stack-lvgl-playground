@@ -1,111 +1,51 @@
-#include <Arduino.h>
 #include <M5Unified.h>
 
 #define LV_CONF_INCLUDE_SIMPLE
 #include <esp_timer.h>
 #include <lvgl.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+#include "core/m5-core.h"
+#include "screens/screens.h"
+#include "screens/boot_screen.h"
+#include "screens/screen_one.h"
+#include "screens/weather_screen.h"
 
 constexpr int32_t HOR_RES = 320;
 constexpr int32_t VER_RES = 240;
 
-static const lv_point_t points_array[] = {
-    {0, 1},  /* First button is assigned to x=0; y=1 */
-    {60, 90} /* Second button is assigned to x=60; y=90 */
-};
+constexpr auto SSID = "Solar Dynamics";
+constexpr auto WIFI_PASSWORD = "Sa1lFastLiv3Slow";
 
 lv_display_t *display;
 lv_indev_t *touchpad;
 
-void display_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-  uint32_t w = (area->x2 - area->x1 + 1);
-  uint32_t h = (area->y2 - area->y1 + 1);
+static screen_state state;
 
-  lv_draw_sw_rgb565_swap(px_map, w * h);
-  M5.Display.pushImageDMA<uint16_t>(area->x1, area->y1, w, h,
-                                    (uint16_t *)px_map);
-  lv_disp_flush_ready(disp);
-}
+void setup_wifi()
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(SSID, WIFI_PASSWORD);
 
-uint32_t tick_function() { return (esp_timer_get_time() / 1000LL); }
-
-void touchpad_read(lv_indev_t *drv, lv_indev_data_t *data) {
-  M5.update();
-  auto count = M5.Touch.getCount();
-
-  if (count == 0) {
-    data->state = LV_INDEV_STATE_RELEASED;
-  } else {
-    auto touch = M5.Touch.getDetail(0);
-    data->state = LV_INDEV_STATE_PRESSED;
-    data->point.x = touch.x;
-    data->point.y = touch.y;
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(100);
+    M5.Log.print(".");
   }
+
+  M5.Log.println("WiFi connected");
+  M5.Log.print("IP address: ");
+  M5.Log.printf("%s\n", WiFi.localIP().toString());
+
+
 }
 
-static void second_screen() {
-  lv_obj_t *screen = lv_obj_create(NULL);
-
-  lv_obj_t *btn = lv_button_create(screen); /*Add a button the current screen*/
-  lv_obj_set_size(btn, 100, 50);
-  lv_obj_center(btn);
-
-  lv_obj_t *label = lv_label_create(btn);    /*Add a label to the button*/
-  lv_label_set_text(label, "To 1st Screen"); /*Set the labels text*/
-  lv_obj_center(label);
-
-  lv_obj_t *info_label = lv_label_create(screen);
-
-  lv_label_set_text(info_label, "The last button event:\nNone");
-
-  lv_screen_load_anim(screen, LV_SCREEN_LOAD_ANIM_OVER_LEFT, 200, 5, true);
-}
-
-static void btn_event_cb(lv_event_t *e) {
-  lv_event_code_t code = lv_event_get_code(e);
-  lv_obj_t *label = reinterpret_cast<lv_obj_t *>(lv_event_get_user_data(e));
-
-  switch (code) {
-  case LV_EVENT_PRESSED:
-    lv_label_set_text(label, "The last button event:\nLV_EVENT_PRESSED");
-    second_screen();
-    break;
-  case LV_EVENT_CLICKED:
-    lv_label_set_text(label, "The last button event:\nLV_EVENT_CLICKED");
-    break;
-  case LV_EVENT_LONG_PRESSED:
-    lv_label_set_text(label, "The last button event:\nLV_EVENT_LONG_PRESSED");
-    break;
-  case LV_EVENT_LONG_PRESSED_REPEAT:
-    lv_label_set_text(label,
-                      "The last button event:\nLV_EVENT_LONG_PRESSED_REPEAT");
-    break;
-  default:
-    break;
-  }
-}
-
-/**
- * Create a button with a label and react on click event.
- */
-static void first_screen(void) {
-  lv_obj_t *btn =
-      lv_button_create(lv_screen_active()); /*Add a button the current screen*/
-  lv_obj_set_size(btn, 100, 50);
-  lv_obj_center(btn);
-
-  lv_obj_t *label = lv_label_create(btn);    /*Add a label to the button*/
-  lv_label_set_text(label, "To 2nd Screen"); /*Set the labels text*/
-  lv_obj_center(label);
-
-  lv_obj_t *info_label = lv_label_create(lv_screen_active());
-
-  lv_label_set_text(info_label, "The last button event:\nNone");
-
-  lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_ALL, info_label);
-}
 
 // continue setup code
-void setup() {
+void setup()
+{
   M5.begin();
   lv_init();
   lv_tick_set_cb(tick_function);
@@ -121,10 +61,20 @@ void setup() {
   lv_indev_set_type(touchpad, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(touchpad, touchpad_read);
 
-  first_screen();
+  lv_screen_load(boot_screen());
+
+  setup_wifi();
+
+  state.current_screen = 0;
+  state.screens[0] = first_screen(state);
+  state.screens[1] = weather_screen(state);
+
+  lv_screen_load(state.screens[state.current_screen]);
+  update_temperature();
 }
 
-void loop() {
+void loop()
+{
   lv_task_handler();
   vTaskDelay(1);
 }
