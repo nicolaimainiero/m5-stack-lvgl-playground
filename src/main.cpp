@@ -9,7 +9,7 @@
 
 #include "core/m5-core.h"
 #include "screens/screens.h"
-#include "screens/boot_screen.h"
+#include "screens/level_screen.h"
 #include "screens/screen_one.h"
 #include "screens/weather_screen.h"
 
@@ -61,13 +61,12 @@ void setup()
   lv_indev_set_type(touchpad, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(touchpad, touchpad_read);
 
-  lv_screen_load(boot_screen());
-
   setup_wifi();
 
   state.current_screen = 0;
   state.screens[0] = first_screen(state);
   state.screens[1] = weather_screen(state);
+  state.screens[2] = level_screen(state);
 
   lv_screen_load(state.screens[state.current_screen]);
   update_temperature();
